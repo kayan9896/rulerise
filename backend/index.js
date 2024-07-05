@@ -60,7 +60,8 @@ app.post('/register', async (req, res) => {
 app.post('/login', passport.authenticate('local', { failureRedirect: '/login' }), (req, res) => {
   // Generate and sign a JWT token
   const token = jwt.sign({ id: req.user.id }, process.env.JWT_SECRET, { expiresIn: '1h' });
-
+  console.log(req.user.id);
+  console.log(token)
   res.json({ token });
 });
 
@@ -71,9 +72,23 @@ app.get('/logout', (req, res) => {
 });
 
 const Task = require('./task');
+const isAuthenticated = (req, res, next) => {
+  const token = req.headers.authorization?.split(' ')[1]; // Expecting 'Bearer <token>'
+  if (!token) {
+    return res.status(401).json({ message: 'Not authenticated' });
+  }
+  console.log(token);
+  jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+    if (err) {
+      return res.status(401).json({ message: 'Invalid token' });
+    }
 
+    req.user = { id: decoded.id }; // Set the user id in the request
+    next();
+  });
+};
 // Create a new task
-app.post('/tasks', async (req, res) => {
+app.post('/tasks', isAuthenticated, async (req, res) => {
   const { description } = req.body;
   const userId = req.user.id; // Assuming 'req.user' is populated by passport
 
@@ -88,7 +103,7 @@ app.post('/tasks', async (req, res) => {
 });
 
 // Get all tasks for the currently authenticated user
-app.get('/tasks', async (req, res) => {
+app.get('/tasks', isAuthenticated, async (req, res) => {
   try {
     const tasks = await Task.find({ user: req.user.id });
     res.json({ tasks });
@@ -99,13 +114,12 @@ app.get('/tasks', async (req, res) => {
 });
 
 // Get a single task by Id
-app.get('/tasks/:id', getTask, (req, res) => {
+app.get('/tasks/:id', isAuthenticated, getTask, (req, res) => {
   res.json({ task: res.task });
 });
 
 // Update a task
-app.put('/tasks/:id', getTask, async (req, res) => {
-  // Only update fields that are sent in the request body
+app.put('/tasks/:id', isAuthenticated, getTask, async (req, res) => {
   const updates = Object.keys(req.body);
   updates.forEach((key) => {
     res.task[key] = req.body[key];
@@ -115,7 +129,7 @@ app.put('/tasks/:id', getTask, async (req, res) => {
 });
 
 // Delete a task
-app.delete('/tasks/:id', getTask, async (req, res) => {
+app.delete('/tasks/:id', isAuthenticated, getTask, async (req, res) => {
   await res.task.remove();
   res.json({ message: 'Deleted Task' });
 });

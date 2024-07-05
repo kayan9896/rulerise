@@ -13,11 +13,10 @@ export const AuthProvider = ({ children }) => {
     try {
       const response = await axios.post('https://super-orbit-wjx6p66wg7w3grgr-5000.app.github.dev/register', { email, password });
       if (response.data.token) {
-        const userSession = email ; 
+        const userSession = response.data.token ;
         localStorage.setItem('user', JSON.stringify(userSession));
-        setUser(userSession);
-        
-        return response.data.token;
+        setUser(email)
+        return response.data.token
       } else {
         setError('Failed to register user');
       }
@@ -31,9 +30,9 @@ export const AuthProvider = ({ children }) => {
     try {
       const response = await axios.post('https://super-orbit-wjx6p66wg7w3grgr-5000.app.github.dev/login', { email, password });
       if (response.data.token) {
-        const userSession = email ; 
-        localStorage.setItem('user', JSON.stringify(userSession));
-        setUser(userSession)
+        const userSession = response.data.token ; 
+        localStorage.setItem('user', userSession);
+        setUser(email)
         return response.data.token
       } else {
         setError('Failed to login user');
