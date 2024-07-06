@@ -1,18 +1,14 @@
 import { useState } from 'react';
 import axios from 'axios';
 
-const Task = ({ task, handleDelete }) => {
+const Task = ({ task, handleDelete, handleSubmit }) => {
   const [editMode, setEditMode] = useState(false);
   const [updatedDescription, setUpdatedDescription] = useState(task.description);
 
+
   const handleSubmitUpdate = async () => {
-    try {
-      const response = await axios.put(`/api/tasks/${task._id}`, { description: updatedDescription });
-      setEditMode(false);
-      console.log(response.data.task);
-    } catch (error) {
-      console.error('Error updating task: ', error);
-    }
+    handleSubmit(task._id,updatedDescription)
+    setEditMode(false);
   };
 
   const handleDeleteClick = () => {
@@ -39,5 +35,6 @@ const Task = ({ task, handleDelete }) => {
       )}
     </div>
   );
-};  
+};
+
 export default Task;

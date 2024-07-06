@@ -4,8 +4,10 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const passport = require('passport');
 const jwt = require('jsonwebtoken');
-const passportLocal = require('./passport');
 const session = require('express-session');
+const http = require('http');
+const WebSocket = require('ws');
+
 const app = express();
 const PORT = process.env.PORT || 5000;
 
@@ -87,20 +89,8 @@ const isAuthenticated = (req, res, next) => {
     next();
   });
 };
-// Create a new task
-app.post('/tasks', isAuthenticated, async (req, res) => {
-  const { description } = req.body;
-  const userId = req.user.id; // Assuming 'req.user' is populated by passport
 
-  try {
-    const task = new Task({ description, user: userId });
-    await task.save();
-    res.status(201).json({ task });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Server Error' });
-  }
-});
+
 
 // Get all tasks for the currently authenticated user
 app.get('/tasks', isAuthenticated, async (req, res) => {
@@ -118,22 +108,55 @@ app.get('/tasks/:id', isAuthenticated, getTask, (req, res) => {
   res.json({ task: res.task });
 });
 
-// Update a task
+const server = http.createServer(app);
+const wss = new WebSocket.Server({ server });
+
+wss.on('connection', (ws) => {
+  console.log('Client connected');
+
+  ws.on('close', () => {
+    console.log('Client disconnected');
+  });
+});
+
+const broadcast = (data) => {
+  wss.clients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(JSON.stringify(data));
+    }
+  });
+};
+
+app.post('/tasks', isAuthenticated, async (req, res) => {
+  const { description } = req.body;
+  const userId = req.user.id;
+
+  try {
+    const task = new Task({ description, user: userId });
+    await task.save();
+    broadcast({ type: 'ADD_TASK', task });
+    res.status(201).json({ task });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server Error' });
+  }
+});
+
+app.delete('/tasks/:id', isAuthenticated, getTask, async (req, res) => {
+  await res.task.remove();
+  broadcast({ type: 'DELETE_TASK', taskId: req.params.id });
+  res.json({ message: 'Deleted Task' });
+});
+
 app.put('/tasks/:id', isAuthenticated, getTask, async (req, res) => {
   const updates = Object.keys(req.body);
   updates.forEach((key) => {
     res.task[key] = req.body[key];
   });
   await res.task.save();
+  broadcast({ type: 'UPDATE_TASK', task: res.task });
   res.json({ task: res.task });
 });
-
-// Delete a task
-app.delete('/tasks/:id', isAuthenticated, getTask, async (req, res) => {
-  await res.task.remove();
-  res.json({ message: 'Deleted Task' });
-});
-
 // Middleware to fetch task by id - used in task update and delete routes
 async function getTask(req, res, next) {
   let task;
@@ -153,17 +176,73 @@ async function getTask(req, res, next) {
   next();
 }
 
-const server = require('http').Server(app);
-const io = require('socket.io')(server);
+const Project = require('./project');
 
-// Socket.io configuration
-io.on('connection', (socket) => {
-    console.log('New user connected');
-    
-    socket.on('disconnect', () => {
-        console.log('User disconnected');
-    });
+// Create a new Project
+app.post('/projects', isAuthenticated, async (req, res) => {  
+ const { name, description } = req.body;
+ const userId = req.user.id;
 
-    
+ try {
+   const project = new Project({ name, description, user: userId });
+   await project.save();
+   res.status(201).json({ project });
+ } catch (error) {
+   console.error(error);
+   res.status(500).json({ message: 'Server Error' });
+ }
 });
+
+// Get all projects for the currently authenticated user
+app.get('/projects', isAuthenticated, async (req, res) => { 
+ try {
+   const projects = await Project.find({ user: req.user.id });
+   res.json({ projects });
+ } catch (error) {
+   console.error(error); 
+   res.status(500).json({ message: 'Server Error' });
+ }
+});
+
+// Get a single project by Id
+app.get('/projects/:id', isAuthenticated, getProject, (req, res) => { 
+  res.json({ project: res.project });
+});
+
+// Update a project
+app.put('/projects/:id', isAuthenticated, getProject, async (req, res) => {  
+   const updates = Object.keys(req.body);
+   updates.forEach((key) => {
+     res.project[key] = req.body[key];
+   });
+   await res.project.save();
+   res.json({ project: res.project });
+});
+
+// Delete a project
+app.delete('/projects/:id', isAuthenticated, getProject, async (req, res) => {   
+   await res.project.remove();
+   res.json({ message: 'Deleted Project' });   
+});
+
+// Middleware to fetch project by id
+async function getProject(req, res, next) {  
+  let project;
+  try {
+    project = await Project.findById(req.params.id);
+    if (project == null) {  
+        return res.status(404).json({ message: 'Cannot find project' });
+    }
+    // Check if the project belongs to the authenticated user
+    if (project.user.toString() !== req.user.id) { 
+        return res.status(401).json({ message: 'Not authorized' });    
+    }
+  } catch (error) {  
+    return res.status(500).json({ message: 'Server Error' }); 
+  }  
+  res.project = project;
+  next();  
+} 
+
+
 app.listen(PORT, () => console.log(`Server started on port ${PORT}`));
